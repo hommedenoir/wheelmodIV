@@ -1,0 +1,6 @@
+# built files and local test output
+*.exe
+*.dll
+*.pdb
+*_results*.txt
+WheelMod.ini
