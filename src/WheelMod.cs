@@ -471,6 +471,19 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
             }
             playerDriving = inCar;
 
+            // the on-screen display steps aside whenever the game is busy with something else:
+            // save prompts, phone dialogs, cutscenes (player control off), pause menu, fades,
+            // or when the player has switched the HUD off in the game's settings
+            try
+            {
+                int player = Natives.CONVERT_INT_TO_PLAYERINDEX(Natives.GET_PLAYER_ID());
+                hudAllowed = Natives.IS_PLAYER_CONTROL_ON(player)
+                    && !Natives.IS_PAUSE_MENU_ACTIVE()
+                    && !Natives.IS_SCREEN_FADED_OUT()
+                    && Natives.IS_HUD_PREFERENCE_SWITCHED_ON();
+            }
+            catch { hudAllowed = true; }
+
             UpdateFfb();
         }
 
@@ -862,16 +875,18 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
         }
 
         bool hudOpen = true;
+        volatile bool hudAllowed = true;
 
         // Gear, rev counter and speed, bottom right of the screen
         void DrawHud()
         {
-            if (!cfg.ShowHud || !enabled || !playerDriving || !wheelTookOver) return;
+            if (!cfg.ShowHud || !enabled || !playerDriving || !wheelTookOver || !hudAllowed) return;
             Vector2 ds = ImGuiIV.GetIO().DisplaySize;
             ImGuiIV.SetNextWindowPos(new Vector2(ds.X - 640f, ds.Y - 150f), eImGuiCond.Always);
             ImGuiIV.SetNextWindowBgAlpha(0.35f);
             eImGuiWindowFlags fl = eImGuiWindowFlags.NoDecoration | eImGuiWindowFlags.NoInputs | eImGuiWindowFlags.AlwaysAutoResize |
-                eImGuiWindowFlags.NoSavedSettings | eImGuiWindowFlags.NoFocusOnAppearing | eImGuiWindowFlags.NoNav;
+                eImGuiWindowFlags.NoSavedSettings | eImGuiWindowFlags.NoFocusOnAppearing | eImGuiWindowFlags.NoNav |
+                eImGuiWindowFlags.NoBringToFrontOnFocus;
             hudOpen = true;
             if (ImGuiIV.Begin("WheelModHud", ref hudOpen, fl))
             {
@@ -891,7 +906,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
                 ImGuiIV.SetWindowFontScale(1f);
                 // TEMPORARY test info (build 3d) - remove once the gearbox works
                 ImGuiIV.TextUnformatted(string.Format(CultureInfo.InvariantCulture,
-                    "build 3n  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}  rpm {3:0.00}  gas {4:0.00}  gear ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
+                    "build 3o  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}  rpm {3:0.00}  gas {4:0.00}  gear ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
                     driveGear, gameGear, gameNextGear, engineRpm, outGas, gearSpeeds[1], gearSpeeds[2], gearSpeeds[3], gearSpeeds[4], gearSpeeds[5], clutchEngaged, GearboxPatch.Active ? "ON" : "off"));
                 ImGuiIV.TextUnformatted(gearDebug);
             }
@@ -901,7 +916,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
         void Main_OnImGuiRendering(IntPtr devicePtr, ImGuiIV_DrawingContext ctx)
         {
             DrawHud();
-            if (!showWindow) return;
+            if (!showWindow || !hudAllowed) return;   // the status window also steps aside for game prompts
 
             windowOpen = true;
             ImGuiIV.SetNextWindowSize(new Vector2(380f, 0f), eImGuiCond.FirstUseEver);
