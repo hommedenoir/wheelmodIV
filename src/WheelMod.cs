@@ -471,6 +471,19 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
             }
             playerDriving = inCar;
 
+            // the game can take control away while the player still sits in the car:
+            // death, arrest, cutscenes, mission scripts. Then the wheel must let go,
+            // otherwise the mod keeps driving the car past the game (build 3p fix)
+            try
+            {
+                int pl = Natives.CONVERT_INT_TO_PLAYERINDEX(Natives.GET_PLAYER_ID());
+                controlOn = Natives.IS_PLAYER_PLAYING(pl)
+                    && !Natives.IS_PLAYER_DEAD(pl)
+                    && !(ped != 0 && Natives.IS_CHAR_DEAD(ped))
+                    && Natives.IS_PLAYER_CONTROL_ON(pl);
+            }
+            catch { controlOn = true; }
+
             // the on-screen display steps aside whenever the game is busy with something else:
             // save prompts, phone dialogs, cutscenes (player control off), pause menu, fades,
             // or when the player has switched the HUD off in the game's settings
@@ -570,7 +583,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
                 return;
             }
 
-            if (!enabled || !playerDriving || !wheelTookOver)
+            if (!enabled || !playerDriving || !controlOn || !wheelTookOver)
             {
                 ffb.Relax();
                 return;
@@ -657,7 +670,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
         // Game: called for every car each frame; we only touch the player's car
         void Main_ProcessAutomobile(UIntPtr vehPtr)
         {
-            if (!enabled || !playerDriving || wheel == null) return;
+            if (!enabled || !playerDriving || !controlOn || wheel == null) return;
 
             UIntPtr playerPtr = IVPlayerInfo.FindThePlayerPed();
             if (playerPtr == UIntPtr.Zero) return;
@@ -876,6 +889,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
 
         bool hudOpen = true;
         volatile bool hudAllowed = true;
+        volatile bool controlOn = true;   // false while the game has taken control (death, arrest, cutscene)
 
         // Gear, rev counter and speed, bottom right of the screen
         void DrawHud()
@@ -906,7 +920,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
                 ImGuiIV.SetWindowFontScale(1f);
                 // TEMPORARY test info (build 3d) - remove once the gearbox works
                 ImGuiIV.TextUnformatted(string.Format(CultureInfo.InvariantCulture,
-                    "build 3o  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}  rpm {3:0.00}  gas {4:0.00}  gear ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
+                    "build 3p  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}\nrpm {3:0.00}  gas {4:0.00}  ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
                     driveGear, gameGear, gameNextGear, engineRpm, outGas, gearSpeeds[1], gearSpeeds[2], gearSpeeds[3], gearSpeeds[4], gearSpeeds[5], clutchEngaged, GearboxPatch.Active ? "ON" : "off"));
                 ImGuiIV.TextUnformatted(gearDebug);
             }
