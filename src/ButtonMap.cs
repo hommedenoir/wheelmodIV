@@ -249,10 +249,15 @@ namespace WheelMod
         public bool Active;
         public bool Finished;      // set once when the last step is done; the script saves the ini
         int step;
-        bool waitRelease;
+        bool first;                                   // first tick: remember what is already held, don't take it
+        readonly List<string> before = new List<string>();
+        bool upWas, downWas;
         string lastAssigned = "";
 
-        public void Start() { Active = true; Finished = false; step = 0; waitRelease = true; lastAssigned = ""; }
+        public void Start() { Active = true; Finished = false; step = 0; first = true; lastAssigned = ""; }
+
+        // F8 while open: close and count the setup as done (what was chosen so far is kept)
+        public void Close() { Active = false; Finished = true; }
 
         static List<string> Pressed(WheelDevice w, int skipA, int skipB)
         {
@@ -273,16 +278,18 @@ namespace WheelMod
             if (!Active) return;
             List<string> pressed = Pressed(w, upButton, downButton);
             bool up = upButton > 0 && w.Button(upButton), down = downButton > 0 && w.Button(downButton);
-            if (waitRelease)
-            {
-                if (pressed.Count == 0 && !up && !down) waitRelease = false;
-                return;
-            }
-            if (up) { Next(); return; }
-            if (down) { if (step > 0) step--; waitRelease = true; return; }
-            if (pressed.Count == 0) return;
+            // only NEW presses count; a button or switch that is held all the time is ignored
+            string input = null;
+            if (!first)
+                foreach (string p in pressed) if (!before.Contains(p)) { input = p; break; }
+            bool upNew = up && !upWas && !first, downNew = down && !downWas && !first;
+            before.Clear(); before.AddRange(pressed);
+            upWas = up; downWas = down; first = false;
 
-            string input = pressed[0];
+            if (upNew) { Next(); return; }
+            if (downNew) { if (step > 0) step--; return; }
+            if (input == null) return;
+
             string action = Actions[step];
             // this action leaves any other button it was on
             List<string> keys = new List<string>(map.Keys);
@@ -296,7 +303,6 @@ namespace WheelMod
         void Next()
         {
             step++;
-            waitRelease = true;
             if (step >= Actions.Length) { Active = false; Finished = true; }
         }
 
@@ -335,7 +341,7 @@ namespace WheelMod
                 ImGuiIV.Separator();
                 ImGuiIV.TextUnformatted("Right paddle = skip (keep it)     Left paddle = back");
                 if (lastAssigned.Length > 0) ImGuiIV.TextUnformatted("Saved: " + lastAssigned);
-                ImGuiIV.TextUnformatted("Run it again any time with F8.");
+                ImGuiIV.TextUnformatted("F8 = close (keeps what you set). F8 in a car opens it again.");
             }
             ImGuiIV.End();
         }
