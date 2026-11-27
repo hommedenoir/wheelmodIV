@@ -557,19 +557,20 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
             if (carHandle != buttonsCar) { buttons.NewCar(); buttonsCar = carHandle; }
             buttons.Track(wheel);
 
-            if (!cfg.ButtonSetupDone && !wizard.Active && carSpeed < 1f) wizard.Start();
-            if (wizard.Active)
-            {
-                buttons.ReleaseAll();
-                wizard.Update(wheel, cfg.ButtonMap, cfg.ShiftUpButton, cfg.ShiftDownButton);
-                return;
-            }
+            // save first: a finished or closed setup must count as done before anything can reopen it
             if (wizard.Finished)
             {
                 wizard.Finished = false;
                 cfg.ButtonSetupDone = true;
                 cfg.Save();
                 IVGame.ShowSubtitleMessage("Wheel buttons saved");
+                return;
+            }
+            if (!cfg.ButtonSetupDone && !wizard.Active && carSpeed < 1f) wizard.Start();
+            if (wizard.Active)
+            {
+                buttons.ReleaseAll();
+                wizard.Update(wheel, cfg.ButtonMap, cfg.ShiftUpButton, cfg.ShiftDownButton);
                 return;
             }
 
@@ -1017,7 +1018,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
                 ImGuiIV.SetWindowFontScale(1f);
                 // TEMPORARY test info (build 3d) - remove once the gearbox works
                 ImGuiIV.TextUnformatted(string.Format(CultureInfo.InvariantCulture,
-                    "build 3s  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}\nrpm {3:0.00}  gas {4:0.00}  ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
+                    "build 3t  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}\nrpm {3:0.00}  gas {4:0.00}  ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
                     driveGear, gameGear, gameNextGear, engineRpm, outGas, gearSpeeds[1], gearSpeeds[2], gearSpeeds[3], gearSpeeds[4], gearSpeeds[5], clutchEngaged, GearboxPatch.Active ? "ON" : "off"));
                 ImGuiIV.TextUnformatted(gearDebug);
             }
