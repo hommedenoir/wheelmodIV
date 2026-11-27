@@ -1,0 +1,74 @@
+name: Wheel test report
+description: Tell us how the mod works with your wheel. Takes about two minutes.
+title: "[Test] <your wheel> - <works / partly / doesn't work>"
+labels: ["test report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing! Every report with a wheel other than the T248 helps a lot.
+  - type: input
+    id: wheel
+    attributes:
+      label: Wheel and pedals
+      description: Brand and model, e.g. "Logitech G29 + stock pedals", "Fanatec CSL DD + CSL pedals".
+    validations:
+      required: true
+  - type: dropdown
+    id: version
+    attributes:
+      label: Mod version
+      options:
+        - v0.1.0 beta (build 3w)
+        - Built from source (write the build shown on the in-game display under "Anything else")
+    validations:
+      required: true
+  - type: dropdown
+    id: game
+    attributes:
+      label: Game
+      multiple: true
+      options:
+        - GTA IV
+        - The Lost and Damned
+        - The Ballad of Gay Tony
+    validations:
+      required: true
+  - type: input
+    id: ivsdk
+    attributes:
+      label: IV-SDK .NET version
+      description: Shown in the IV-SDK .NET console (F4).
+      placeholder: e.g. 1.9.1
+  - type: checkboxes
+    id: works
+    attributes:
+      label: What worked?
+      description: Tick everything that worked. Leave the rest unticked.
+      options:
+        - label: "The wheel was found (F6 window: Device shows your wheel)"
+        - label: "Steering"
+        - label: "Throttle and brake"
+        - label: "Clutch pedal"
+        - label: "Force feedback"
+        - label: "Gear shifting with the paddles"
+        - label: "Gear / rev display"
+        - label: "Button setup window (F8)"
+        - label: "Horn / siren / indicators / lights on the wheel buttons"
+  - type: textarea
+    id: problems
+    attributes:
+      label: What didn't work or felt wrong?
+      description: For example "steering is reversed", "throttle is always full", "force feedback pulls the wrong way".
+  - type: textarea
+    id: files
+    attributes:
+      label: Settings file and screenshot
+      description: |
+        Drag your `WheelMod.ini` (GTAIV\IVSDKDotNet\scripts) into this box.
+        A screenshot of the F6 status window while driving helps a lot too.
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else
+      description: Optional.

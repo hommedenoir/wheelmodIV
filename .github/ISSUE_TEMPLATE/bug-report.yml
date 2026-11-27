@@ -1,0 +1,29 @@
+name: Bug report
+description: Something broke, crashed or behaves strangely.
+title: "[Bug] <short description>"
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: wheel
+    attributes:
+      label: Wheel
+      placeholder: e.g. Thrustmaster T248
+  - type: input
+    id: version
+    attributes:
+      label: Mod version
+      placeholder: e.g. v0.1.0 beta (build 3w)
+  - type: textarea
+    id: files
+    attributes:
+      label: Log and settings
+      description: |
+        Drag these into the box if you can:
+        `GTAIV\IVSDKDotNet.log` and `GTAIV\IVSDKDotNet\scripts\WheelMod.ini`.
