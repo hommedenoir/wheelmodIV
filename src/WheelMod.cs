@@ -160,6 +160,8 @@ namespace WheelMod
         public float TorqueFillRpm = 0.23f;   // below this (game rpm 0..1) the game itself gives (almost) no drive
         public int GearForceMode = 0;         // test: 0 = set gear only, 1 = gear + next gear, 2 = do not touch (watch only)
         public bool ShowHud = true;           // gear + rev counter on screen
+        public bool ShowInputs = true;        // pedal / steering / force feedback bars next to the gear display
+        public bool HudDebug = false;         // test lines (gearbox data) under the display
         public float ShiftLightRpm = 0.9f;
         public float IdleRpm = 800f, RedlineRpm = 7000f;   // only for the number on the rev counter    // rev counter turns red from here (0..1)
         public bool TakeOverOnlyWhenMoved = true;
@@ -254,6 +256,8 @@ namespace WheelMod
                 case "throttlecut": ThrottleCut = B(v); break;
                 case "shifttimems": ShiftTimeMs = int.Parse(v); break;
                 case "showhud": ShowHud = B(v); break;
+                case "showinputs": ShowInputs = B(v); break;
+                case "huddebug": HudDebug = B(v); break;
                 case "gearforcemode": GearForceMode = int.Parse(v); break;
                 case "antistall": AntiStall = B(v); break;
                 case "torquefill": TorqueFill = B(v); break;
@@ -360,6 +364,8 @@ sb.AppendLine("ClutchMode=" + ClutchMode + "   ; Auto = the mod works the clutch
             sb.AppendLine("AntiStall=" + AntiStall + "   ; instead: shift down by itself when the gear is too high to pull");
             sb.AppendLine("GearForceMode=" + GearForceMode + "   ; TEST: 0 = set gear only, 1 = gear + next gear, 2 = don't touch the game's gearbox");
             sb.AppendLine("ShowHud=" + ShowHud + "   ; gear, rev counter and speed in the bottom right corner");
+            sb.AppendLine("ShowInputs=" + ShowInputs + "   ; clutch / brake / throttle / force feedback bars and steering next to the display");
+            sb.AppendLine("HudDebug=" + HudDebug + "   ; extra test lines with gearbox data under the display");
 sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
             sb.AppendLine("RedlineRpm=" + Fs(RedlineRpm) + "   ; rev counter number at the limiter");
             sb.AppendLine("ShiftLightRpm=" + Fs(ShiftLightRpm) + "   ; rev counter turns red (shift!) from here, 0..1");
@@ -421,6 +427,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
         float steeringLock, carLockDeg, lockWheelDeg = 450f;
         ForceFeedback ffb = new ForceFeedback();
         float lastX, velFiltered, lastForce;
+        volatile bool ffbClip;
 
         // car motion, measured in Tick (car frame: long = forwards, lat = to the right)
         int carHandle = 0, lastCarTime = 0;
@@ -740,6 +747,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
             force *= cfg.FfbGain;
             if (cfg.FfbInvert) force = -force;
             lastForce = Math.Max(-1f, Math.Min(1f, force));
+            ffbClip = Math.Abs(force) >= 0.999f;
             ffb.SetForce(lastForce);
         }
 
@@ -1024,39 +1032,73 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
         int lastIndicator, blinkStart;   // false while the game has taken control (death, arrest, cutscene)
 
         // Gear, rev counter and speed, bottom right of the screen
+        static System.Drawing.Color C(int r, int g, int b, int a = 255) { return System.Drawing.Color.FromArgb(a, r, g, b); }
+
+        // Gear / speed / revs plus pedal, steering and force feedback bars, drawn straight onto the screen
+        // (own drawing instead of ImGui widgets, so colours and the big gear number work)
         void DrawHud()
         {
             if (!cfg.ShowHud || !enabled || !playerDriving || !wheelTookOver || !hudAllowed) return;
+            ImGuiIV_DrawingContext dl = ImGuiIV.GetForegroundDrawList();
+            if (!dl.IsValid) return;
             Vector2 ds = ImGuiIV.GetIO().DisplaySize;
-            ImGuiIV.SetNextWindowPos(new Vector2(ds.X - 640f, ds.Y - 150f), eImGuiCond.Always);
-            ImGuiIV.SetNextWindowBgAlpha(0.35f);
-            eImGuiWindowFlags fl = eImGuiWindowFlags.NoDecoration | eImGuiWindowFlags.NoInputs | eImGuiWindowFlags.AlwaysAutoResize |
-                eImGuiWindowFlags.NoSavedSettings | eImGuiWindowFlags.NoFocusOnAppearing | eImGuiWindowFlags.NoNav |
-                eImGuiWindowFlags.NoBringToFrontOnFocus;
-            hudOpen = true;
-            if (ImGuiIV.Begin("WheelModHud", ref hudOpen, fl))
+            eImDrawFlags none = (eImDrawFlags)0;
+
+            float pw = cfg.ShowInputs ? 400f : 280f, ph = 118f;
+            Vector2 p0 = new Vector2(ds.X - pw - 24f, ds.Y - ph - 24f);
+            dl.AddRectFilled(p0, p0 + new Vector2(pw, ph), C(10, 10, 14, 150), 8f, none);
+
+            float x = p0.X + 14f, y = p0.Y + 12f;
+            if (cfg.ShowInputs)
             {
-                string g = selGear == -1 ? "R" : selGear == 0 ? "N" : (cfg.GearboxMode == "Automatic" ? "D" : selGear.ToString());
-                ImGuiIV.SetWindowFontScale(3.5f);
-                ImGuiIV.TextUnformatted(g);
-                ImGuiIV.SameLine();
-                ImGuiIV.SetWindowFontScale(1.6f);
-                ImGuiIV.TextUnformatted(string.Format(CultureInfo.InvariantCulture, "  {0:0} km/h", Math.Abs(carSpeed) * 3.6f));
-                float rpm = Math.Max(0f, Math.Min(1f, engineRpm));   // GTA: 0.2 = idle, 1.0 = limiter
-                Vector4 col = rpm >= cfg.ShiftLightRpm ? ((Environment.TickCount / 80) % 2 == 0 ? new Vector4(1f, 0.1f, 0.1f, 1f) : new Vector4(1f, 1f, 1f, 1f))
-                    : rpm >= cfg.ShiftLightRpm - 0.15f ? new Vector4(1f, 0.75f, 0.1f, 1f) : new Vector4(0.2f, 0.85f, 0.3f, 1f);
-                ImGuiIV.PushStyleColor(eImGuiCol.PlotHistogram, col);
-                ImGuiIV.ProgressBar(rpm, new Vector2(260f, 22f), string.Format(CultureInfo.InvariantCulture, "{0:0} rpm",
-                    cfg.IdleRpm + Math.Max(0f, rpm - 0.2f) / 0.8f * (cfg.RedlineRpm - cfg.IdleRpm)));
-                ImGuiIV.PopStyleColor();
-                ImGuiIV.SetWindowFontScale(1f);
-                // TEMPORARY test info (build 3d) - remove once the gearbox works
-                ImGuiIV.TextUnformatted(string.Format(CultureInfo.InvariantCulture,
-                    "build 3w  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}\nrpm {3:0.00}  gas {4:0.00}  ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
-                    driveGear, gameGear, gameNextGear, engineRpm, outGas, gearSpeeds[1], gearSpeeds[2], gearSpeeds[3], gearSpeeds[4], gearSpeeds[5], clutchEngaged, GearboxPatch.Active ? "ON" : "off"));
-                ImGuiIV.TextUnformatted(gearDebug);
+                // steering: bar with a centre mark and a yellow marker
+                float sw = 4 * 16f + 3 * 6f;
+                dl.AddRectFilled(new Vector2(x, y), new Vector2(x + sw, y + 8f), C(60, 60, 68), 3f, none);
+                dl.AddLine(new Vector2(x + sw / 2f, y - 2f), new Vector2(x + sw / 2f, y + 10f), C(150, 150, 160), 1f);
+                float sx = x + sw / 2f + Math.Max(-1f, Math.Min(1f, inSteer)) * (sw / 2f - 3f);
+                dl.AddRectFilled(new Vector2(sx - 3f, y - 2f), new Vector2(sx + 3f, y + 10f), C(255, 205, 40), 2f, none);
+
+                // pedals + force feedback: vertical bars filling from the bottom
+                float by = y + 18f, bh = 72f, bw = 16f;
+                string[] lab = { "C", "B", "T", "FF" };
+                float[] val = { inClutch, inBrake, inThrottle, Math.Abs(lastForce) };
+                System.Drawing.Color[] col = { C(60, 140, 255), C(235, 50, 50), C(40, 210, 90), ffbClip ? C(235, 50, 50) : C(170, 170, 178) };
+                for (int i = 0; i < 4; i++)
+                {
+                    float bx = x + i * (bw + 6f);
+                    float v = Math.Max(0f, Math.Min(1f, val[i]));
+                    dl.AddRectFilled(new Vector2(bx, by), new Vector2(bx + bw, by + bh), C(45, 45, 52), 2f, none);
+                    if (v > 0.005f)
+                        dl.AddRectFilled(new Vector2(bx, by + bh * (1f - v)), new Vector2(bx + bw, by + bh), col[i], 2f, none);
+                    dl.AddText(IntPtr.Zero, new Vector2(bx + (i == 3 ? 0f : 4f), by + bh + 2f), C(200, 200, 205), 13f, lab[i]);
+                }
+                x += 4 * (bw + 6f) + 16f;
             }
-            ImGuiIV.End();
+
+            // gear (big), speed, rev bar
+            string g = selGear == -1 ? "R" : selGear == 0 ? "N" : (cfg.GearboxMode == "Automatic" ? "D" : selGear.ToString());
+            dl.AddText(IntPtr.Zero, new Vector2(x, y - 6f), C(255, 255, 255), 78f, g);
+            float tx = x + 62f;
+            dl.AddText(IntPtr.Zero, new Vector2(tx, y + 2f), C(235, 235, 240), 30f,
+                string.Format(CultureInfo.InvariantCulture, "{0:0}", Math.Abs(carSpeed) * 3.6f));
+            dl.AddText(IntPtr.Zero, new Vector2(tx, y + 34f), C(160, 160, 168), 15f, "km/h");
+
+            float rpm = Math.Max(0f, Math.Min(1f, engineRpm));   // GTA: 0.2 = idle, 1.0 = limiter
+            float rw = p0.X + pw - 14f - tx, ry = y + 62f;
+            System.Drawing.Color rc = rpm >= cfg.ShiftLightRpm ? ((Environment.TickCount / 80) % 2 == 0 ? C(255, 30, 30) : C(255, 255, 255))
+                : rpm >= cfg.ShiftLightRpm - 0.15f ? C(255, 190, 30) : C(50, 215, 80);
+            dl.AddRectFilled(new Vector2(tx, ry), new Vector2(tx + rw, ry + 14f), C(45, 45, 52), 3f, none);
+            dl.AddRectFilled(new Vector2(tx, ry), new Vector2(tx + rw * rpm, ry + 14f), rc, 3f, none);
+            dl.AddText(IntPtr.Zero, new Vector2(tx, ry + 17f), C(200, 200, 205), 15f, string.Format(CultureInfo.InvariantCulture, "{0:0} rpm",
+                cfg.IdleRpm + Math.Max(0f, rpm - 0.2f) / 0.8f * (cfg.RedlineRpm - cfg.IdleRpm)));
+
+            if (cfg.HudDebug)
+            {
+                dl.AddText(IntPtr.Zero, new Vector2(p0.X, p0.Y - 34f), C(220, 220, 220), 13f, string.Format(CultureInfo.InvariantCulture,
+                    "build 3x  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}  rpm {3:0.00}  gas {4:0.00}  ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
+                    driveGear, gameGear, gameNextGear, engineRpm, outGas, gearSpeeds[1], gearSpeeds[2], gearSpeeds[3], gearSpeeds[4], gearSpeeds[5], clutchEngaged, GearboxPatch.Active ? "ON" : "off"));
+                dl.AddText(IntPtr.Zero, new Vector2(p0.X, p0.Y - 18f), C(220, 220, 220), 13f, gearDebug);
+            }
         }
 
         void Main_OnImGuiRendering(IntPtr devicePtr, ImGuiIV_DrawingContext ctx)

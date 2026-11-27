@@ -13,7 +13,7 @@ if not exist "%GAME%\IVSDKDotNetWrapper.dll" ( echo Game folder not found: %GAME
 "%CSC%" /nologo /target:library /platform:x86 /optimize+ ^
   /out:"%GAME%\IVSDKDotNet\scripts\WheelMod.ivsdk.dll" ^
   /reference:"%GAME%\IVSDKDotNetWrapper.dll" ^
-  /reference:System.Numerics.dll /reference:System.Windows.Forms.dll ^
+  /reference:System.Numerics.dll /reference:System.Windows.Forms.dll /reference:System.Drawing.dll ^
   "%SRC%*.cs"
 
 if errorlevel 1 ( echo. & echo BUILD FAILED - see the error lines above. ) else ( echo. & echo Build OK: %GAME%\IVSDKDotNet\scripts\WheelMod.ivsdk.dll )
