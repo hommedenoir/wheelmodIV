@@ -457,6 +457,16 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
                 nextFfbInit = 0;
                 IVGame.Console.Print("WheelMod: settings reloaded.");
             });
+            RegisterConsoleCommand("wheelmod_blink", args =>
+            {
+                int m;
+                if (args != null && args.Length > 0 && int.TryParse(args[0], out m) && m >= 0 && m <= 15)
+                {
+                    blinkTestMask = m;
+                    IVGame.Console.Print("WheelMod: blink test " + m + " (1 left, 2 right, 4 hazard, 8 indicator). 'wheelmod_blink off' to stop.");
+                }
+                else { blinkTestMask = -1; IVGame.Console.Print("WheelMod: blink test off."); }
+            });
             RegisterConsoleCommand("wheelmod_ffbtest", args =>
             {
                 int m = 6000;
@@ -768,10 +778,24 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
             {
                 int ind = buttons.Indicator;
                 bool haz = buttons.Hazards;
-                veh.VehicleFlags3.LeftIndicator = ind == -1;
-                veh.VehicleFlags3.RightIndicator = ind == 1;
-                veh.VehicleFlags3.IndicatorLights = ind != 0;
-                veh.VehicleFlags3.HazardLights = haz;
+                int mask = blinkTestMask;
+                if (mask >= 0)
+                {
+                    // test: wheelmod_blink <number>  1 = left flag, 2 = right flag, 4 = hazard flag, 8 = indicator flag
+                    veh.VehicleFlags3.LeftIndicator = (mask & 1) != 0;
+                    veh.VehicleFlags3.RightIndicator = (mask & 2) != 0;
+                    veh.VehicleFlags3.HazardLights = (mask & 4) != 0;
+                    veh.VehicleFlags3.IndicatorLights = (mask & 8) != 0;
+                }
+                else if (ind != 0 || haz || indicatorWasSet)
+                {
+                    // the 'indicator lights' flag blinks all four, so only the side flags are used
+                    veh.VehicleFlags3.LeftIndicator = !haz && ind == -1;
+                    veh.VehicleFlags3.RightIndicator = !haz && ind == 1;
+                    veh.VehicleFlags3.IndicatorLights = false;
+                    veh.VehicleFlags3.HazardLights = haz;
+                    indicatorWasSet = ind != 0 || haz;
+                }
             }
             catch { }
 
@@ -987,7 +1011,9 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
         volatile bool controlOn = true;
         readonly ButtonMapper buttons = new ButtonMapper();
         readonly ButtonWizard wizard = new ButtonWizard();
-        int buttonsCar = 0;   // false while the game has taken control (death, arrest, cutscene)
+        int buttonsCar = 0;
+        volatile int blinkTestMask = -1;
+        bool indicatorWasSet;   // false while the game has taken control (death, arrest, cutscene)
 
         // Gear, rev counter and speed, bottom right of the screen
         void DrawHud()
@@ -1018,7 +1044,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
                 ImGuiIV.SetWindowFontScale(1f);
                 // TEMPORARY test info (build 3d) - remove once the gearbox works
                 ImGuiIV.TextUnformatted(string.Format(CultureInfo.InvariantCulture,
-                    "build 3t  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}\nrpm {3:0.00}  gas {4:0.00}  ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
+                    "build 3u  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}\nrpm {3:0.00}  gas {4:0.00}  ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
                     driveGear, gameGear, gameNextGear, engineRpm, outGas, gearSpeeds[1], gearSpeeds[2], gearSpeeds[3], gearSpeeds[4], gearSpeeds[5], clutchEngaged, GearboxPatch.Active ? "ON" : "off"));
                 ImGuiIV.TextUnformatted(gearDebug);
             }
