@@ -191,9 +191,9 @@ namespace WheelMod
         {
             Dictionary<string, string> m = new Dictionary<string, string>();
             m["povup"] = "Hazards";
-            m["povright"] = "none";
+            m["povright"] = "IndicatorRight";
             m["povdown"] = "Headlights";
-            m["povleft"] = "none";
+            m["povleft"] = "IndicatorLeft";
             for (int b = 3; b <= 26; b++) m["button" + b] = "none";
             return m;
         }
@@ -325,7 +325,7 @@ namespace WheelMod
             sb.AppendLine();
             sb.AppendLine("[ButtonMap]");
             sb.AppendLine("; Easiest: press F8 in a car for the button setup dialog. Or edit here.");
-            sb.AppendLine("; Actions: none, Horn, Hazards, Headlights (auto/on/off), Siren, InteriorLight, WheelOnOff,");
+            sb.AppendLine("; Actions: none, Horn, Hazards, IndicatorLeft, IndicatorRight, Headlights (auto/on/off), Siren, InteriorLight, WheelOnOff,");
             sb.AppendLine(";          Key:<key> = hold that keyboard key, e.g. Key:Up (phone), Key:V (camera), Key:F (get out)");
             sb.AppendLine("; Buttons 1 and 2 are the T248 paddles, already used for shifting. F6 window shows the last button pressed.");
             sb.AppendLine("ButtonSetupDone=" + ButtonSetupDone + "   ; False = the setup dialog opens the next time you sit in a car");
@@ -762,6 +762,18 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
             IVVehicle veh = IVVehicle.FromUIntPtr(vehPtr);
             if (veh == null || veh.Driver != playerPtr) return;
 
+            // indicators and hazards from the wheel buttons; written every frame so the game keeps them
+            try
+            {
+                int ind = buttons.Indicator;
+                bool haz = buttons.Hazards;
+                veh.VehicleFlags3.LeftIndicator = ind == -1;
+                veh.VehicleFlags3.RightIndicator = ind == 1;
+                veh.VehicleFlags3.IndicatorLights = ind != 0;
+                veh.VehicleFlags3.HazardLights = haz;
+            }
+            catch { }
+
             if (!wheel.Poll()) { wheel = null; return; }
 
             inSteer = Steer();
@@ -1005,7 +1017,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
                 ImGuiIV.SetWindowFontScale(1f);
                 // TEMPORARY test info (build 3d) - remove once the gearbox works
                 ImGuiIV.TextUnformatted(string.Format(CultureInfo.InvariantCulture,
-                    "build 3q  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}\nrpm {3:0.00}  gas {4:0.00}  ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
+                    "build 3r  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}\nrpm {3:0.00}  gas {4:0.00}  ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
                     driveGear, gameGear, gameNextGear, engineRpm, outGas, gearSpeeds[1], gearSpeeds[2], gearSpeeds[3], gearSpeeds[4], gearSpeeds[5], clutchEngaged, GearboxPatch.Active ? "ON" : "off"));
                 ImGuiIV.TextUnformatted(gearDebug);
             }

@@ -7,6 +7,7 @@
 //   none          nothing
 //   Horn          horn while held
 //   Hazards       hazard lights on/off
+//   IndicatorLeft / IndicatorRight   turn signal on/off (the other side switches over)
 //   Headlights    lights: auto -> on -> off -> auto
 //   Siren         siren on/off (police cars, ambulances, fire trucks)
 //   InteriorLight interior light on/off
@@ -36,7 +37,10 @@ namespace WheelMod
         // keys this mapper is holding down right now, by input name
         readonly Dictionary<string, ushort> heldKeys = new Dictionary<string, ushort>();
         int lightsState = 0;        // 0 auto, 1 on, 2 off
-        bool hazards, interior;
+        bool interior;
+        // read by the game thread (ProcessAutomobile), which writes them into the car every frame
+        public volatile int Indicator;      // -1 left, 0 off, 1 right
+        public volatile bool Hazards;
         int nextHorn;
 
         public string LastPressed = "-";
@@ -139,9 +143,17 @@ namespace WheelMod
                 switch (a)
                 {
                     case "hazards":
-                        hazards = !hazards;
-                        if (veh != 0) Natives.SET_VEH_HAZARDLIGHTS(veh, hazards);
-                        LastAction = "hazards " + (hazards ? "on" : "off");
+                        Hazards = !Hazards;
+                        if (veh != 0) Natives.SET_VEH_HAZARDLIGHTS(veh, Hazards);
+                        LastAction = "hazards " + (Hazards ? "on" : "off");
+                        break;
+                    case "indicatorleft":
+                        Indicator = Indicator == -1 ? 0 : -1;
+                        LastAction = "indicator " + (Indicator == -1 ? "left" : "off");
+                        break;
+                    case "indicatorright":
+                        Indicator = Indicator == 1 ? 0 : 1;
+                        LastAction = "indicator " + (Indicator == 1 ? "right" : "off");
                         break;
                     case "headlights":
                         lightsState = (lightsState + 1) % 3;
@@ -219,7 +231,7 @@ namespace WheelMod
         // A new car: the game's own lights and hazards start fresh
         public void NewCar()
         {
-            lightsState = 0; hazards = false; interior = false;
+            lightsState = 0; Hazards = false; interior = false; Indicator = 0;
         }
     }
 }
@@ -230,9 +242,9 @@ namespace WheelMod
     // Right paddle = skip (keep what is set), left paddle = back.
     class ButtonWizard
     {
-        static readonly string[] Labels = { "Horn", "Hazard lights", "Headlights (auto / on / off)", "Siren",
+        static readonly string[] Labels = { "Horn", "Hazard lights", "Indicator left", "Indicator right", "Headlights (auto / on / off)", "Siren",
                                             "Phone (Up arrow)", "Change camera (V)", "Get out of the car (F)", "Wheel on / off (F7)" };
-        static readonly string[] Actions = { "Horn", "Hazards", "Headlights", "Siren", "Key:Up", "Key:V", "Key:F", "WheelOnOff" };
+        static readonly string[] Actions = { "Horn", "Hazards", "IndicatorLeft", "IndicatorRight", "Headlights", "Siren", "Key:Up", "Key:V", "Key:F", "WheelOnOff" };
 
         public bool Active;
         public bool Finished;      // set once when the last step is done; the script saves the ini
