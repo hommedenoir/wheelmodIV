@@ -789,9 +789,12 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
                 }
                 else if (ind != 0 || haz || indicatorWasSet)
                 {
-                    // the 'indicator lights' flag blinks all four, so only the side flags are used
-                    veh.VehicleFlags3.LeftIndicator = !haz && ind == -1;
-                    veh.VehicleFlags3.RightIndicator = !haz && ind == 1;
+                    // the 'indicator lights' flag blinks all four, so only the side flags are used.
+                    // The side flags alone light steadily, so the mod blinks them itself (0.4 s on, 0.4 s off)
+                    if (ind != lastIndicator) { blinkStart = Environment.TickCount; lastIndicator = ind; }
+                    bool lit = ((Environment.TickCount - blinkStart) / 400) % 2 == 0;
+                    veh.VehicleFlags3.LeftIndicator = !haz && ind == -1 && lit;
+                    veh.VehicleFlags3.RightIndicator = !haz && ind == 1 && lit;
                     veh.VehicleFlags3.IndicatorLights = false;
                     veh.VehicleFlags3.HazardLights = haz;
                     indicatorWasSet = ind != 0 || haz;
@@ -1013,7 +1016,8 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
         readonly ButtonWizard wizard = new ButtonWizard();
         int buttonsCar = 0;
         volatile int blinkTestMask = -1;
-        bool indicatorWasSet;   // false while the game has taken control (death, arrest, cutscene)
+        bool indicatorWasSet;
+        int lastIndicator, blinkStart;   // false while the game has taken control (death, arrest, cutscene)
 
         // Gear, rev counter and speed, bottom right of the screen
         void DrawHud()
@@ -1044,7 +1048,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
                 ImGuiIV.SetWindowFontScale(1f);
                 // TEMPORARY test info (build 3d) - remove once the gearbox works
                 ImGuiIV.TextUnformatted(string.Format(CultureInfo.InvariantCulture,
-                    "build 3u  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}\nrpm {3:0.00}  gas {4:0.00}  ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
+                    "build 3v  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}\nrpm {3:0.00}  gas {4:0.00}  ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
                     driveGear, gameGear, gameNextGear, engineRpm, outGas, gearSpeeds[1], gearSpeeds[2], gearSpeeds[3], gearSpeeds[4], gearSpeeds[5], clutchEngaged, GearboxPatch.Active ? "ON" : "off"));
                 ImGuiIV.TextUnformatted(gearDebug);
             }
