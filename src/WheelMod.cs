@@ -143,6 +143,7 @@ namespace WheelMod
         // [ButtonMap]: input (lower case, e.g. button5, povup) -> action
         public Dictionary<string, string> ButtonMap = DefaultButtonMap();
         public bool ButtonSetupDone = false;
+        public string HornKey = "G";
         public int HandbrakeButton = 0;       // 0 = leave handbrake to the game
         public int ShiftUpButton = 2;         // T248: right paddle
         public int ShiftDownButton = 1;       // T248: left paddle
@@ -210,6 +211,7 @@ namespace WheelMod
                 return;
             }
             if (k == "buttonsetupdone") { ButtonSetupDone = B(v); return; }
+            if (k == "hornkey") { HornKey = v; return; }
             switch (k)
             {
                 case "vid": Vid = Hex(v); break;
@@ -328,6 +330,7 @@ namespace WheelMod
             sb.AppendLine("; Actions: none, Horn, Hazards, IndicatorLeft, IndicatorRight, Headlights (auto/on/off), Siren, InteriorLight, WheelOnOff,");
             sb.AppendLine(";          Key:<key> = hold that keyboard key, e.g. Key:Up (phone), Key:V (camera), Key:F (get out)");
             sb.AppendLine("; Buttons 1 and 2 are the T248 paddles, already used for shifting. F6 window shows the last button pressed.");
+            sb.AppendLine("HornKey=" + HornKey + "   ; the game's horn key, used by the Horn action (check GTA IV Settings > Controls)");
             sb.AppendLine("ButtonSetupDone=" + ButtonSetupDone + "   ; False = the setup dialog opens the next time you sit in a car");
             foreach (string pn in ButtonMapper.PovNames)
             {
@@ -584,6 +587,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
                 return;
             }
 
+            try { buttons.HornKey = (Keys)Enum.Parse(typeof(Keys), cfg.HornKey, true); } catch { buttons.HornKey = Keys.G; }
             buttons.Update(wheel, cfg.ButtonMap, carHandle);
             if (buttons.WheelToggleRequested)
             {
@@ -1048,7 +1052,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
                 ImGuiIV.SetWindowFontScale(1f);
                 // TEMPORARY test info (build 3d) - remove once the gearbox works
                 ImGuiIV.TextUnformatted(string.Format(CultureInfo.InvariantCulture,
-                    "build 3v  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}\nrpm {3:0.00}  gas {4:0.00}  ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
+                    "build 3w  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}\nrpm {3:0.00}  gas {4:0.00}  ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
                     driveGear, gameGear, gameNextGear, engineRpm, outGas, gearSpeeds[1], gearSpeeds[2], gearSpeeds[3], gearSpeeds[4], gearSpeeds[5], clutchEngaged, GearboxPatch.Active ? "ON" : "off"));
                 ImGuiIV.TextUnformatted(gearDebug);
             }

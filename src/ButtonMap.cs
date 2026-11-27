@@ -5,7 +5,7 @@
 // PovDown, PovLeft) can get an action in WheelMod.ini, section [ButtonMap]:
 //
 //   none          nothing
-//   Horn          horn while held
+//   Horn          holds the game's horn key (HornKey in the ini): tap = siren, hold = horn / yelp
 //   Hazards       hazard lights on/off
 //   IndicatorLeft / IndicatorRight   turn signal on/off (the other side switches over)
 //   Headlights    lights: auto -> on -> off -> auto
@@ -41,7 +41,7 @@ namespace WheelMod
         // read by the game thread (ProcessAutomobile), which writes them into the car every frame
         public volatile int Indicator;      // -1 left, 0 off, 1 right
         public volatile bool Hazards;
-        int nextHorn;
+        public Keys HornKey = Keys.G;   // the game's horn key (GTA IV PC: G); set from WheelMod.ini
 
         public string LastPressed = "-";
         public string LastAction = "-";
@@ -131,11 +131,10 @@ namespace WheelMod
                 string a = action.ToLowerInvariant();
                 if (a == "horn")
                 {
-                    if (now && veh != 0 && Environment.TickCount >= nextHorn)
-                    {
-                        Natives.SOUND_CAR_HORN(veh, 250);
-                        nextHorn = Environment.TickCount + 200;
-                    }
+                    // hold the game's own horn key, so the game does what the real horn does:
+                    // tap = siren on/off in emergency cars, hold = yelp / horn
+                    if (now && !before) { SendKey(HornKey, true); heldKeys[input] = (ushort)HornKey; LastAction = "horn (" + HornKey + ")"; }
+                    else if (!now && before) { SendKey(HornKey, false); heldKeys.Remove(input); }
                     continue;
                 }
                 if (!(now && !before)) continue;   // the rest act once per press
