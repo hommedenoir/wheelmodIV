@@ -483,13 +483,22 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
                 if (args != null && args.Length > 0) int.TryParse(args[0], out m);
                 IVGame.Console.Print("WheelMod: " + ffb.Kick(m));
             });
-            IVGame.Console.Print("WheelMod loaded. F6 = status window, F7 = wheel on/off, F8 = button setup. Settings: " + iniPath);
+            IVGame.Console.Print("WheelMod loaded. F6 = status window, F7 = wheel on/off, F8 = button setup, F9 = display. Settings: " + iniPath);
         }
 
         void Main_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.F6) showWindow = !showWindow;
             else if (e.KeyCode == Keys.F8) { if (wizard.Active) wizard.Close(); else wizard.Start(); }
+            else if (e.KeyCode == Keys.F9)
+            {
+                // display: everything -> gear display only -> off -> everything
+                if (cfg.ShowHud && cfg.ShowInputs) cfg.ShowInputs = false;
+                else if (cfg.ShowHud) cfg.ShowHud = false;
+                else { cfg.ShowHud = true; cfg.ShowInputs = true; }
+                cfg.Save();
+                IVGame.ShowSubtitleMessage(!cfg.ShowHud ? "Display off" : cfg.ShowInputs ? "Display + pedals" : "Display only");
+            }
             else if (e.KeyCode == Keys.F7)
             {
                 enabled = !enabled;
@@ -1095,7 +1104,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
             if (cfg.HudDebug)
             {
                 dl.AddText(IntPtr.Zero, new Vector2(p0.X, p0.Y - 34f), C(220, 220, 220), 13f, string.Format(CultureInfo.InvariantCulture,
-                    "build 3x  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}  rpm {3:0.00}  gas {4:0.00}  ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
+                    "build 3y  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}  rpm {3:0.00}  gas {4:0.00}  ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
                     driveGear, gameGear, gameNextGear, engineRpm, outGas, gearSpeeds[1], gearSpeeds[2], gearSpeeds[3], gearSpeeds[4], gearSpeeds[5], clutchEngaged, GearboxPatch.Active ? "ON" : "off"));
                 dl.AddText(IntPtr.Zero, new Vector2(p0.X, p0.Y - 18f), C(220, 220, 220), 13f, gearDebug);
             }

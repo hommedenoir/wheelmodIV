@@ -41,7 +41,7 @@ Built on IV-SDK .NET.
 1. Quit GTA IV (the game locks the script file while running).
 2. Pass your game folder to the build (`src\build.bat "C:\path\to\GTAIV"`) or change the default at the top of `src\build.bat`.
 3. Double-click `src\build.bat` and wait for **"Build OK"**.
-4. Start the game. F6 = status window, F7 = wheel on/off, F8 = button setup. Settings: `IVSDKDotNet\scripts\WheelMod.ini`.
+4. Start the game. F6 = status window, F7 = wheel on/off, F8 = button setup, F9 = display (all / gear only / off). Settings: `IVSDKDotNet\scripts\WheelMod.ini`.
 
 No Visual Studio needed: the build uses the C# compiler that comes with Windows.
 
