@@ -63,6 +63,7 @@ namespace WheelMod
         public string Name = "";
         public int[] Min = new int[6], Max = new int[6], Axes = new int[6];
         public int Buttons;
+        public int Pov = -1;   // D-pad: hundredths of a degree, 0 = up; -1 or 65535 = not pressed
 
         // Find a device by VID/PID. Returns null if not connected.
         public static WheelDevice Find(ushort vid, ushort pid)
@@ -93,6 +94,7 @@ namespace WheelMod
             Axes[0] = info.dwXpos; Axes[1] = info.dwYpos; Axes[2] = info.dwZpos;
             Axes[3] = info.dwRpos; Axes[4] = info.dwUpos; Axes[5] = info.dwVpos;
             Buttons = info.dwButtons;
+            Pov = info.dwPOV;
             return true;
         }
 
@@ -138,6 +140,9 @@ namespace WheelMod
         public float SteerDeadzone = 0.0f;    // fraction of half-range
         public float PedalDeadzone = 0.03f;   // fraction of travel
         public float PedalSaturation = 0.97f; // pressed this far = 100 %
+        // [ButtonMap]: input (lower case, e.g. button5, povup) -> action
+        public Dictionary<string, string> ButtonMap = DefaultButtonMap();
+        public bool ButtonSetupDone = false;
         public int HandbrakeButton = 0;       // 0 = leave handbrake to the game
         public int ShiftUpButton = 2;         // T248: right paddle
         public int ShiftDownButton = 1;       // T248: left paddle
@@ -182,12 +187,29 @@ namespace WheelMod
             return s;
         }
 
+        static Dictionary<string, string> DefaultButtonMap()
+        {
+            Dictionary<string, string> m = new Dictionary<string, string>();
+            m["povup"] = "Hazards";
+            m["povright"] = "none";
+            m["povdown"] = "Headlights";
+            m["povleft"] = "none";
+            for (int b = 3; b <= 26; b++) m["button" + b] = "none";
+            return m;
+        }
+
         static bool B(string v) { v = v.ToLowerInvariant(); return v == "1" || v == "true" || v == "yes" || v == "on"; }
         static float F(string v) { return float.Parse(v, CultureInfo.InvariantCulture); }
         static ushort Hex(string v) { return Convert.ToUInt16(v.Replace("0x", ""), 16); }
 
         void Apply(string k, string v)
         {
+            if (k.StartsWith("pov") || (k.StartsWith("button") && k.Length > 6 && char.IsDigit(k[6])))
+            {
+                ButtonMap[k] = v.Length == 0 ? "none" : v;
+                return;
+            }
+            if (k == "buttonsetupdone") { ButtonSetupDone = B(v); return; }
             switch (k)
             {
                 case "vid": Vid = Hex(v); break;
@@ -301,6 +323,26 @@ namespace WheelMod
             sb.AppendLine("ShiftUpButton=" + ShiftUpButton + "   ; T248 right paddle = 2");
             sb.AppendLine("ShiftDownButton=" + ShiftDownButton + "   ; T248 left paddle = 1");
             sb.AppendLine();
+            sb.AppendLine("[ButtonMap]");
+            sb.AppendLine("; Easiest: press F8 in a car for the button setup dialog. Or edit here.");
+            sb.AppendLine("; Actions: none, Horn, Hazards, Headlights (auto/on/off), Siren, InteriorLight, WheelOnOff,");
+            sb.AppendLine(";          Key:<key> = hold that keyboard key, e.g. Key:Up (phone), Key:V (camera), Key:F (get out)");
+            sb.AppendLine("; Buttons 1 and 2 are the T248 paddles, already used for shifting. F6 window shows the last button pressed.");
+            sb.AppendLine("ButtonSetupDone=" + ButtonSetupDone + "   ; False = the setup dialog opens the next time you sit in a car");
+            foreach (string pn in ButtonMapper.PovNames)
+            {
+                string val; ButtonMap.TryGetValue(pn.ToLowerInvariant(), out val);
+                sb.AppendLine(pn + "=" + (val ?? "none"));
+            }
+            List<int> nums = new List<int>();
+            foreach (string key in ButtonMap.Keys)
+            {
+                int n;
+                if (key.StartsWith("button") && int.TryParse(key.Substring(6), out n)) nums.Add(n);
+            }
+            nums.Sort();
+            foreach (int n in nums) sb.AppendLine("Button" + n + "=" + ButtonMap["button" + n]);
+            sb.AppendLine();
             sb.AppendLine("[Gearbox]");
             sb.AppendLine("GearboxMode=" + GearboxMode + "   ; Sequential = you shift with the paddles (R-N-1-2-...). Automatic = game shifts, paddles pick R-N-D");
             sb.AppendLine("ThrottleCut=" + ThrottleCut + "   ; lift the throttle briefly on upshifts");
@@ -400,7 +442,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
             KeyDown += Main_KeyDown;
             ProcessAutomobile += Main_ProcessAutomobile;
             OnImGuiRendering += Main_OnImGuiRendering;
-            Uninitialize += (s, e) => { ffb.Dispose(); GearboxPatch.Restore(); };
+            Uninitialize += (s, e) => { buttons.ReleaseAll(); ffb.Dispose(); GearboxPatch.Restore(); };
         }
 
         void Main_Initialized(object sender, EventArgs e)
@@ -421,12 +463,13 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
                 if (args != null && args.Length > 0) int.TryParse(args[0], out m);
                 IVGame.Console.Print("WheelMod: " + ffb.Kick(m));
             });
-            IVGame.Console.Print("WheelMod loaded. F6 = status window, F7 = wheel on/off. Settings: " + iniPath);
+            IVGame.Console.Print("WheelMod loaded. F6 = status window, F7 = wheel on/off, F8 = button setup. Settings: " + iniPath);
         }
 
         void Main_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.F6) showWindow = !showWindow;
+            else if (e.KeyCode == Keys.F8) { if (wizard.Active) wizard.Active = false; else wizard.Start(); }
             else if (e.KeyCode == Keys.F7)
             {
                 enabled = !enabled;
@@ -498,6 +541,45 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
             catch { hudAllowed = true; }
 
             UpdateFfb();
+            UpdateButtons();
+        }
+
+        // Wheel buttons and D-pad -> actions from [ButtonMap], and the setup dialog
+        void UpdateButtons()
+        {
+            if (wheel == null) return;
+            if (!enabled || !playerDriving || !controlOn)
+            {
+                buttons.ReleaseAll();
+                return;
+            }
+            if (!wheel.Poll()) return;
+            if (carHandle != buttonsCar) { buttons.NewCar(); buttonsCar = carHandle; }
+            buttons.Track(wheel);
+
+            if (!cfg.ButtonSetupDone && !wizard.Active && carSpeed < 1f) wizard.Start();
+            if (wizard.Active)
+            {
+                buttons.ReleaseAll();
+                wizard.Update(wheel, cfg.ButtonMap, cfg.ShiftUpButton, cfg.ShiftDownButton);
+                return;
+            }
+            if (wizard.Finished)
+            {
+                wizard.Finished = false;
+                cfg.ButtonSetupDone = true;
+                cfg.Save();
+                IVGame.ShowSubtitleMessage("Wheel buttons saved");
+                return;
+            }
+
+            buttons.Update(wheel, cfg.ButtonMap, carHandle);
+            if (buttons.WheelToggleRequested)
+            {
+                buttons.WheelToggleRequested = false;
+                enabled = !enabled;
+                IVGame.ShowSubtitleMessage(enabled ? "Wheel ON" : "Wheel OFF");
+            }
         }
 
         static float Clamp1(float v) { return v > 1f ? 1f : (v < -1f ? -1f : v); }
@@ -708,8 +790,8 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
             try { if (veh.Handling != null) maxGears = (int)Math.Max(1u, Math.Min(7u, veh.Handling.DriveGears)); } catch { }
             if (!sequential) maxGears = 1;
             if (selGear > maxGears) selGear = maxGears;
-            bool up = cfg.ShiftUpButton > 0 && wheel.Button(cfg.ShiftUpButton);
-            bool down = cfg.ShiftDownButton > 0 && wheel.Button(cfg.ShiftDownButton);
+            bool up = !wizard.Active && cfg.ShiftUpButton > 0 && wheel.Button(cfg.ShiftUpButton);
+            bool down = !wizard.Active && cfg.ShiftDownButton > 0 && wheel.Button(cfg.ShiftDownButton);
             int nowMs = Environment.TickCount;
             // order: R - N - 1 - 2 ... ; R <-> N only when (nearly) stopped
             if (up && !upWas)
@@ -889,7 +971,10 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
 
         bool hudOpen = true;
         volatile bool hudAllowed = true;
-        volatile bool controlOn = true;   // false while the game has taken control (death, arrest, cutscene)
+        volatile bool controlOn = true;
+        readonly ButtonMapper buttons = new ButtonMapper();
+        readonly ButtonWizard wizard = new ButtonWizard();
+        int buttonsCar = 0;   // false while the game has taken control (death, arrest, cutscene)
 
         // Gear, rev counter and speed, bottom right of the screen
         void DrawHud()
@@ -920,7 +1005,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
                 ImGuiIV.SetWindowFontScale(1f);
                 // TEMPORARY test info (build 3d) - remove once the gearbox works
                 ImGuiIV.TextUnformatted(string.Format(CultureInfo.InvariantCulture,
-                    "build 3p  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}\nrpm {3:0.00}  gas {4:0.00}  ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
+                    "build 3q  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}\nrpm {3:0.00}  gas {4:0.00}  ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
                     driveGear, gameGear, gameNextGear, engineRpm, outGas, gearSpeeds[1], gearSpeeds[2], gearSpeeds[3], gearSpeeds[4], gearSpeeds[5], clutchEngaged, GearboxPatch.Active ? "ON" : "off"));
                 ImGuiIV.TextUnformatted(gearDebug);
             }
@@ -930,6 +1015,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
         void Main_OnImGuiRendering(IntPtr devicePtr, ImGuiIV_DrawingContext ctx)
         {
             DrawHud();
+            if (hudAllowed && playerDriving) wizard.Draw(cfg.ButtonMap);
             if (!showWindow || !hudAllowed) return;   // the status window also steps aside for game prompts
 
             windowOpen = true;
@@ -946,6 +1032,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
                     "Gear: {0}   ({1}, {2} gears)   game gear {3} / next {4}   rpm {5:0.00}",
                     selGear == -1 ? "R" : selGear == 0 ? "N" : (cfg.GearboxMode == "Automatic" ? "D" : selGear.ToString()),
                     cfg.GearboxMode, maxGears, gameGear, gameNextGear, engineRpm));
+                ImGuiIV.TextUnformatted("Last wheel button: " + buttons.LastPressed + "   last action: " + buttons.LastAction);
                 ImGuiIV.TextUnformatted("Gearbox patch: " + GearboxPatch.Status);
                 ImGuiIV.TextUnformatted("Gearbox data: " + gearDebug);
                 ImGuiIV.TextUnformatted("Force feedback: " + (cfg.FfbEnabled ? ffb.Status : "off in ini"));
