@@ -155,3 +155,5 @@ Goal: other people can use the mod, not just the T248 setup.
 5. Readme: install steps, known limits, credits (IV-SDK .NET by ItsClonkAndre; ideas from ikt's
    GTA V Manual Transmission).
 6. Release: GTAForums / gta4-mods / Nexus Mods, source code on GitHub.
+
+- Indicator ticking sound (game only ticks for hazards); indicators cancel by themselves after a turn.
