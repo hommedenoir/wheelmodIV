@@ -64,25 +64,61 @@ namespace WheelMod
         public int[] Min = new int[6], Max = new int[6], Axes = new int[6];
         public int Buttons;
         public int Pov = -1;   // D-pad: hundredths of a degree, 0 = up; -1 or 65535 = not pressed
+        public ushort Vid, Pid;  // USB vendor / product id of this device
+        public bool AutoFound;   // true = picked automatically, not by the VID/PID in the ini
 
-        // Find a device by VID/PID. Returns null if not connected.
-        public static WheelDevice Find(ushort vid, ushort pid)
+        // Wheel makers: a device from one of these is taken first when auto-detecting
+        static readonly ushort[] WheelVendors = {
+            0x044F,  // Thrustmaster
+            0x046D,  // Logitech
+            0x0EB7,  // Fanatec
+            0x346E,  // Moza
+            0x16D0,  // Simucube (and other small makers)
+            0x0483,  // Simagic (older), STM-based devices
+            0x3670,  // Simagic
+            0x2433,  // Asetek SimSports
+            0x3416,  // Cammus
+            0x11FF,  // PXN
+        };
+
+        static WheelDevice Open(int id, Joy.JOYCAPSW caps)
+        {
+            WheelDevice d = new WheelDevice();
+            d.Id = id;
+            d.Name = caps.szPname;
+            d.Vid = caps.wMid; d.Pid = caps.wPid;
+            d.Min = new[] { caps.wXmin, caps.wYmin, caps.wZmin, caps.wRmin, caps.wUmin, caps.wVmin };
+            d.Max = new[] { caps.wXmax, caps.wYmax, caps.wZmax, caps.wRmax, caps.wUmax, caps.wVmax };
+            return d.Poll() ? d : null;
+        }
+
+        // Find the device with this VID/PID. If it isn't connected and auto is on, take the most
+        // wheel-like device instead: a known wheel maker first, else anything with enough axes and
+        // buttons that isn't an Xbox controller. Returns null if nothing fits.
+        public static WheelDevice Find(ushort vid, ushort pid, bool auto)
         {
             int count = Math.Min(Joy.joyGetNumDevs(), 16);
+            int bestId = -1, bestScore = 0;
+            Joy.JOYCAPSW bestCaps = new Joy.JOYCAPSW();
             for (int id = 0; id < count; id++)
             {
                 Joy.JOYCAPSW caps = new Joy.JOYCAPSW();
                 if (Joy.joyGetDevCapsW(id, ref caps, Marshal.SizeOf(typeof(Joy.JOYCAPSW))) != 0) continue;
-                if (caps.wMid != vid || caps.wPid != pid) continue;
-
-                WheelDevice d = new WheelDevice();
-                d.Id = id;
-                d.Name = caps.szPname;
-                d.Min = new[] { caps.wXmin, caps.wYmin, caps.wZmin, caps.wRmin, caps.wUmin, caps.wVmin };
-                d.Max = new[] { caps.wXmax, caps.wYmax, caps.wZmax, caps.wRmax, caps.wUmax, caps.wVmax };
-                if (d.Poll()) return d;
+                if (caps.wMid == vid && caps.wPid == pid)
+                {
+                    WheelDevice exact = Open(id, caps);
+                    if (exact != null) return exact;
+                    continue;
+                }
+                if (!auto || caps.wMid == 0x045E) continue;   // never pick a Microsoft / Xbox pad
+                int score = Array.IndexOf(WheelVendors, caps.wMid) >= 0 ? 2
+                          : (caps.wNumAxes >= 3 && caps.wNumButtons >= 6 ? 1 : 0);
+                if (score > bestScore) { bestScore = score; bestId = id; bestCaps = caps; }
             }
-            return null;
+            if (bestId < 0) return null;
+            WheelDevice d = Open(bestId, bestCaps);
+            if (d != null) d.AutoFound = true;
+            return d;
         }
 
         public bool Poll()
@@ -119,6 +155,7 @@ namespace WheelMod
     class WheelSettings
     {
         public ushort Vid = 0x044F, Pid = 0xB696;     // Thrustmaster T248
+        public bool AutoDetect = true;        // if that device isn't connected, use the first wheel found
         public int SteerAxis = 0, ThrottleAxis = 1, BrakeAxis = 2, ClutchAxis = 3;
         public bool InvertSteer = false, InvertThrottle = true, InvertBrake = true, InvertClutch = true;
         public float WheelRotationDeg = 900f; // what the wheel is set to in its driver
@@ -217,6 +254,7 @@ namespace WheelMod
             switch (k)
             {
                 case "vid": Vid = Hex(v); break;
+                case "autodetect": AutoDetect = B(v); break;
                 case "pid": Pid = Hex(v); break;
                 case "steeraxis": SteerAxis = Joy.AxisIndex(v); break;
                 case "throttleaxis": ThrottleAxis = Joy.AxisIndex(v); break;
@@ -285,6 +323,7 @@ namespace WheelMod
             sb.AppendLine("[Device]");
             sb.AppendLine("VID=" + Vid.ToString("X4") + "   ; 044F = Thrustmaster");
             sb.AppendLine("PID=" + Pid.ToString("X4") + "   ; B696 = T248");
+            sb.AppendLine("AutoDetect=" + AutoDetect + "   ; if the wheel above is not connected, use the first wheel found (Thrustmaster, Logitech, Fanatec, Moza, ...)");
             sb.AppendLine();
             sb.AppendLine("[Axes]");
             sb.AppendLine("SteerAxis=" + A(SteerAxis));
@@ -511,8 +550,11 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
         {
             if (wheel == null && Environment.TickCount >= nextDeviceSearch)
             {
-                wheel = WheelDevice.Find(cfg.Vid, cfg.Pid);
+                wheel = WheelDevice.Find(cfg.Vid, cfg.Pid, cfg.AutoDetect);
                 nextDeviceSearch = Environment.TickCount + 3000;
+                if (wheel != null && wheel.AutoFound)
+                    IVGame.Console.Print("WheelMod: wheel " + cfg.Vid.ToString("X4") + "/" + cfg.Pid.ToString("X4") + " not connected, using " +
+                        wheel.Vid.ToString("X4") + "/" + wheel.Pid.ToString("X4") + " automatically. Set VID/PID in WheelMod.ini to choose another one.");
             }
 
             int ped;
@@ -691,7 +733,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
             {
                 if (Environment.TickCount < nextFfbInit) return;
                 nextFfbInit = Environment.TickCount + 5000;
-                if (ffb.Init(cfg.Vid, cfg.Pid)) IVGame.Console.Print("WheelMod: force feedback running.");
+                if (ffb.Init(wheel != null ? wheel.Vid : cfg.Vid, wheel != null ? wheel.Pid : cfg.Pid)) IVGame.Console.Print("WheelMod: force feedback running.");
                 else IVGame.Console.PrintWarning("WheelMod: force feedback not started: " + ffb.Status);
                 return;
             }
@@ -1104,7 +1146,7 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
             if (cfg.HudDebug)
             {
                 dl.AddText(IntPtr.Zero, new Vector2(p0.X, p0.Y - 34f), C(220, 220, 220), 13f, string.Format(CultureInfo.InvariantCulture,
-                    "build 3y  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}  rpm {3:0.00}  gas {4:0.00}  ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
+                    "build 3z  patch {11}  clutch {10:0.00}  drive gear {0}  game gear {1} / next {2}  rpm {3:0.00}  gas {4:0.00}  ratios {5:0.00} {6:0.00} {7:0.00} {8:0.00} {9:0.00}",
                     driveGear, gameGear, gameNextGear, engineRpm, outGas, gearSpeeds[1], gearSpeeds[2], gearSpeeds[3], gearSpeeds[4], gearSpeeds[5], clutchEngaged, GearboxPatch.Active ? "ON" : "off"));
                 dl.AddText(IntPtr.Zero, new Vector2(p0.X, p0.Y - 18f), C(220, 220, 220), 13f, gearDebug);
             }
@@ -1121,7 +1163,8 @@ sb.AppendLine("IdleRpm=" + Fs(IdleRpm) + "   ; rev counter number at idle");
             if (ImGuiIV.Begin("Wheel Mod   F6 hide | F7 on/off", ref windowOpen, eImGuiWindowFlags.AlwaysAutoResize))
             {
                 ImGuiIV.TextUnformatted("Wheel: " + (enabled ? "ON" : "OFF") + "   Device: " +
-                    (wheel != null ? wheel.Name : "not found (VID " + cfg.Vid.ToString("X4") + " PID " + cfg.Pid.ToString("X4") + ")"));
+                    (wheel != null ? wheel.Name + "  (VID " + wheel.Vid.ToString("X4") + " PID " + wheel.Pid.ToString("X4") + (wheel.AutoFound ? ", found automatically)" : ")")
+                                   : "not found (VID " + cfg.Vid.ToString("X4") + " PID " + cfg.Pid.ToString("X4") + ", no other wheel connected)"));
                 ImGuiIV.TextUnformatted("Driving: " + (playerDriving ? "yes" : "no") +
                     "   Wheel in control: " + (wheelTookOver ? "yes" : "no (move the wheel)") +
                     "");
